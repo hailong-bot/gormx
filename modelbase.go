@@ -60,9 +60,9 @@ func (m *ModelBase) GetByIDWithLock(db *gorm.DB, id int64, lock Lock) (DataObjec
 	switch lock {
 	case NoLock:
 	case IS:
-		query = query.Clauses(clause.Locking{Strength: "SHARE"})
+		query = query.Clauses(clause.Locking{Strength: clause.LockingStrengthShare})
 	case IX:
-		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+		query = query.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate})
 	}
 	if err := query.Take(result, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -96,4 +96,104 @@ func (m *ModelBase) InsertBatch(db *gorm.DB, doList interface{}) error {
 		return errors.WithStack(err)
 	}
 	return nil
+}
+
+func (m *ModelBase) GetByConditions(db *gorm.DB, where string, values ...interface{}) (DataObjecter, error) {
+	dataObjectType := reflect.TypeOf(m.DataObjecter)
+	for dataObjectType.Kind() == reflect.Ptr {
+		dataObjectType = dataObjectType.Elem()
+	}
+	dataObjecterValue := reflect.New(dataObjectType)
+	result := dataObjecterValue.Interface().(DataObjecter)
+
+	if dataObjecterValue.Elem().Kind() == reflect.Struct {
+		doerField := dataObjecterValue.Elem().FieldByName("DataObjecter")
+		if doerField.IsValid() && doerField.CanSet() {
+			doerField.Set(dataObjecterValue)
+		}
+	}
+
+	if err := db.Model(m.DataObjecter).Where(where, values...).Take(result).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+	}
+	return result, nil
+}
+
+func (m *ModelBase) GetByConditionsWithLock(db *gorm.DB, lock Lock, where string, values ...interface{}) (DataObjecter, error) {
+	// 1.生成该对象
+	dataObjecterType := reflect.TypeOf(m.DataObjecter)
+	for dataObjecterType.Kind() == reflect.Ptr {
+		dataObjecterType = dataObjecterType.Elem()
+	}
+	dataObjecterValue := reflect.New(dataObjecterType)
+	result := dataObjecterValue.Interface().(DataObjecter)
+
+	// 2.为生成的对象设置 DataObjecter 值
+	if dataObjecterValue.Elem().Kind() == reflect.Struct {
+		doerField := dataObjecterValue.Elem().FieldByName("DataObjecter")
+		if doerField.IsValid() && doerField.CanSet() {
+			doerField.Set(dataObjecterValue)
+		}
+	}
+
+	// 3.查找该对象
+	query := db.Model(m.DataObjecter).Where(where, values...)
+	switch lock {
+	case NoLock:
+	case IS:
+		query = query.Clauses(clause.Locking{Strength: clause.LockingStrengthShare})
+	case IX:
+		query = query.Clauses(clause.Locking{Strength: clause.LockingStrengthUpdate})
+	}
+	if err := query.Take(result).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, errors.WithStack(err)
+	}
+	return result, nil
+}
+
+func (m *ModelBase) List(db *gorm.DB, offset int, limit int, sortField string, sort Sort, where string, values ...interface{}) (
+	DataObjecterList, error) {
+	var result DataObjecterList
+
+	// 1.生成该对象
+	dataObjecterType := reflect.TypeOf(m.DataObjecter)
+	dataObjecterPtrType := dataObjecterType
+	for dataObjecterPtrType.Kind() == reflect.Ptr && dataObjecterPtrType.Elem().Kind() == reflect.Ptr {
+		dataObjecterPtrType = dataObjecterPtrType.Elem()
+	}
+	resultValue := reflect.New(reflect.SliceOf(dataObjecterPtrType))
+	resultSlice := resultValue.Interface()
+
+	// 2.查找到该列表
+	sortSQL := sortField + " " + sort.ToString()
+	if err := db.Order(sortSQL).Offset(offset).Limit(limit).
+		Model(m.DataObjecter).Where(where, values...).
+		Find(resultSlice).Error; err != nil {
+		return nil, errors.WithStack(err)
+	}
+
+	// 3.将结果做类型转换，转为 dataObjecterType
+	for i := 0; i < resultValue.Elem().Len(); i++ {
+		result = append(
+			result,
+			resultValue.Elem().Index(i).Interface().(DataObjecter),
+		)
+	}
+
+	// 4.为生成的对象设置 DataObjecter 值
+	for i := range result {
+		dataObjecterValue := reflect.ValueOf(result[i])
+		if dataObjecterValue.Elem().Kind() == reflect.Struct {
+			doerField := dataObjecterValue.Elem().FieldByName("DataObjecter")
+			if doerField.IsValid() && doerField.CanSet() {
+				doerField.Set(dataObjecterValue)
+			}
+		}
+	}
+	return result, nil
 }
