@@ -1,6 +1,7 @@
 package gormx
 
 import (
+	"github.com/go-sql-driver/mysql"
 	"reflect"
 
 	"github.com/pkg/errors"
@@ -70,4 +71,29 @@ func (m *ModelBase) GetByIDWithLock(db *gorm.DB, id int64, lock Lock) (DataObjec
 		return nil, errors.WithStack(err)
 	}
 	return result, nil
+}
+
+func (m *ModelBase) InsertBatch(db *gorm.DB, doList interface{}) error {
+	if doList == nil {
+		return nil
+	}
+	doListType := reflect.TypeOf(doList)
+	if doListType.Kind() != reflect.Ptr {
+		return errors.New("param expect a pointer of slice")
+	} else if doListType.Elem().Kind() != reflect.Slice && doListType.Elem().Kind() != reflect.Array {
+		return errors.New("param expect a pointer of slice")
+	} else {
+		doListValue := reflect.ValueOf(doList)
+		if doListValue.Elem().Len() == 0 {
+			return nil
+		}
+	}
+	if err := db.Create(doList).Error; err != nil {
+		if mySQLDriverErr, ok := err.(*mysql.MySQLError); ok &&
+			mySQLDriverErr.Number == DuplicateEntryErrCode {
+			return errors.WithStack(ErrDuplicateKey)
+		}
+		return errors.WithStack(err)
+	}
+	return nil
 }

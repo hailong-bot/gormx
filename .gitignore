@@ -1,0 +1,16 @@
+### common ###
+*~
+.#*
+*#
+*.old
+.idea
+.DS_Store
+.vimspector.json
+
+cmd/dev
+go.sum
+.vscode/
+data
+.envrc
+__debug_bin*
+CS

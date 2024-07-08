@@ -7,6 +7,7 @@ type UPO map[string]interface{}
 type Modeler interface {
 	GetByID(db *gorm.DB, id int64) (DataObjecter, error)
 	GetByIDWithLock(db *gorm.DB, id int64, lock Lock) (DataObjecter, error)
+	InsertBatch(db *gorm.DB, doList interface{}) error
 }
 
 type DataObjecter interface {
